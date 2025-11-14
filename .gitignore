@@ -1,0 +1,40 @@
+# Entorno virtual
+venv/
+env/
+ENV/
+.venv
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb_checkpoints/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Archivos de datos grandes (opcional - descomenta si no quieres subir datos)
+# data/*.tif
+# data/*.npy
+# data/*.pkl
+# data/*.csv
+
+# Archivos temporales
+*.tmp
+*.log
+.DS_Store
+Thumbs.db
+
+# Archivos de salida
+*.tif
+!data/*.tif  # Mantener los datos de ejemplo si los hay
+
