@@ -1,0 +1,12 @@
+Banda 1: inta_verano
+Banda 2: mediana
+Banda 3: min
+Banda 4: max
+Banda 5: sd
+Banda 6: NDVI_2023-12
+Banda 7: NDVI_2024-01
+Banda 8: NDVI_2024-02
+Banda 9: NDVI_2024-03
+Banda 10: NDVI_2024-04
+Banda 11: NDVI_2024-05
+Banda 12: NDVI_2024-06
