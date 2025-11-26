@@ -31,6 +31,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap, BoundaryNorm
 from matplotlib.patches import Patch
 import matplotlib.patches as mpatches
+import pickle
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 from scipy.ndimage import generic_filter
@@ -488,14 +489,23 @@ else:
 raster_path_9 = os.path.join(DATA_PROC_DIR, "9_NDVI_con_recortes.tif")
 qml_path_inv = os.path.join(DATA_RAW_DIR, "INTA_23_24", "MNC_inv23.qml")
 qml_path_ver = os.path.join(DATA_RAW_DIR, "INTA_23_24", "MNC_ver24.qml")
+cache_ndvi_grupos_path = os.path.join(DATA_PROC_DIR, "cache_ndvi_temporal_grupos.pkl")
 
-if os.path.exists(raster_path_9):
+if os.path.exists(cache_ndvi_grupos_path):
+    # Cargar resultados cacheados
+    with open(cache_ndvi_grupos_path, "rb") as f:
+        cache_obj = pickle.load(f)
+    meses = cache_obj["meses"]
+    ndvi_por_grupo_inv = cache_obj["ndvi_por_grupo_inv"]
+    ndvi_por_grupo_ver = cache_obj["ndvi_por_grupo_ver"]
+    print(f"Usando cache de evolucion NDVI por grupos: {cache_ndvi_grupos_path}")
+elif os.path.exists(raster_path_9):
     # Meses correspondientes a las bandas 7-19 (NDVI temporal)
     meses = [
         "2023-06", "2023-07", "2023-08", "2023-09", "2023-10", "2023-11", "2023-12",
         "2024-01", "2024-02", "2024-03", "2024-04", "2024-05", "2024-06"
     ]
-    
+
     # Funcion para parsear QML y obtener categorias
     def parsear_categorias_qml(qml_path):
         tree = ET.parse(qml_path)
@@ -508,23 +518,23 @@ if os.path.exists(raster_path_9):
                 cat_val = int(float(value))
                 categorias[cat_val] = label
         return categorias
-    
+
     # Parsear categorias
     categorias_inv = parsear_categorias_qml(qml_path_inv)
     categorias_ver = parsear_categorias_qml(qml_path_ver)
-    
+
     # Definir grupos para INVIERNO
     barbecho_inv = [18]  # Barbecho
     no_agricola_inv = [20]  # No agricola
-    cultivos_inv = [cat for cat in categorias_inv.keys() 
+    cultivos_inv = [cat for cat in categorias_inv.keys()
                     if cat not in barbecho_inv + no_agricola_inv + [25, 255]]
-    
+
     # Definir grupos para VERANO
     barbecho_ver = [21]  # Barbecho
     no_agricola_ver = [22]  # No agricola
-    cultivos_ver = [cat for cat in categorias_ver.keys() 
+    cultivos_ver = [cat for cat in categorias_ver.keys()
                     if cat not in barbecho_ver + no_agricola_ver + [31, 255]]
-    
+
     # Funcion para calcular NDVI promedio por grupo
     def calcular_ndvi_por_grupo(banda_categorias, bandas_ndvi, grupos):
         resultados = defaultdict(list)
@@ -541,7 +551,7 @@ if os.path.exists(raster_path_9):
                     ndvi_promedio = np.nan
                 resultados[grupo_nombre].append(ndvi_promedio)
         return resultados
-    
+
     # Leer el raster
     with rasterio.open(raster_path_9) as src:
         banda_invierno = src.read(1)
@@ -555,7 +565,7 @@ if os.path.exists(raster_path_9):
             else:
                 banda = banda.astype(np.float32)
             bandas_ndvi.append(banda)
-    
+
     # Calcular para INVIERNO
     grupos_inv = {
         'Barbecho': barbecho_inv,
@@ -563,7 +573,7 @@ if os.path.exists(raster_path_9):
         'Cultivos': cultivos_inv
     }
     ndvi_por_grupo_inv = calcular_ndvi_por_grupo(banda_invierno, bandas_ndvi, grupos_inv)
-    
+
     # Calcular para VERANO
     grupos_ver = {
         'Barbecho': barbecho_ver,
@@ -571,63 +581,76 @@ if os.path.exists(raster_path_9):
         'Cultivos': cultivos_ver
     }
     ndvi_por_grupo_ver = calcular_ndvi_por_grupo(banda_verano, bandas_ndvi, grupos_ver)
-    
+
+    # Guardar cache
+    try:
+        with open(cache_ndvi_grupos_path, "wb") as f:
+            pickle.dump({
+                "meses": meses,
+                "ndvi_por_grupo_inv": ndvi_por_grupo_inv,
+                "ndvi_por_grupo_ver": ndvi_por_grupo_ver
+            }, f)
+        print(f"Cache guardado: {cache_ndvi_grupos_path}")
+    except Exception as e:
+        print(f"No se pudo guardar cache ({e})")
+else:
+    print("Raster 9_NDVI_con_recortes.tif no encontrado y no hay cache disponible")
+
+if 'ndvi_por_grupo_inv' in locals() and 'ndvi_por_grupo_ver' in locals():
     # Crear visualizacion
     fig, axes = plt.subplots(1, 2, figsize=(20, 7))
-    
+
     # Colores para los grupos
     colores_grupos = {
         'Barbecho': '#646b63',  # Gris
         'No agricola': '#e6f0c2',  # Beige claro
         'Cultivos': '#42f4ce'  # Verde azulado
     }
-    
+
     # Subplot izquierdo: INVIERNO
     ax_inv = axes[0]
     for grupo_nombre in ['Barbecho', 'No agricola', 'Cultivos']:
         valores_ndvi = ndvi_por_grupo_inv[grupo_nombre]
         color = colores_grupos[grupo_nombre]
         if any(not np.isnan(v) for v in valores_ndvi):
-            ax_inv.plot(meses, valores_ndvi, marker='o', label=grupo_nombre, 
+            ax_inv.plot(meses, valores_ndvi, marker='o', label=grupo_nombre,
                        color=color, linewidth=2.5, markersize=8)
-    
+
     ax_inv.set_xticks(range(len(meses)))
     ax_inv.set_xticklabels(meses, rotation=45, ha='right')
     ax_inv.set_xlabel("Mes", fontsize=12)
     ax_inv.set_ylabel("NDVI promedio", fontsize=12)
-    ax_inv.set_title("Evolucion temporal NDVI por grupo - INVIERNO 2023", 
+    ax_inv.set_title("Evolucion temporal NDVI por grupo - INVIERNO 2023",
                     fontsize=14, fontweight='bold')
     ax_inv.grid(True, linestyle='--', alpha=0.5)
     ax_inv.legend(fontsize=11, loc='best')
     ax_inv.set_ylim(bottom=0)
-    
+
     # Subplot derecho: VERANO
     ax_ver = axes[1]
     for grupo_nombre in ['Barbecho', 'No agricola', 'Cultivos']:
         valores_ndvi = ndvi_por_grupo_ver[grupo_nombre]
         color = colores_grupos[grupo_nombre]
         if any(not np.isnan(v) for v in valores_ndvi):
-            ax_ver.plot(meses, valores_ndvi, marker='o', label=grupo_nombre, 
+            ax_ver.plot(meses, valores_ndvi, marker='o', label=grupo_nombre,
                        color=color, linewidth=2.5, markersize=8)
-    
+
     ax_ver.set_xticks(range(len(meses)))
     ax_ver.set_xticklabels(meses, rotation=45, ha='right')
     ax_ver.set_xlabel("Mes", fontsize=12)
     ax_ver.set_ylabel("NDVI promedio", fontsize=12)
-    ax_ver.set_title("Evolucion temporal NDVI por grupo - VERANO 2024", 
+    ax_ver.set_title("Evolucion temporal NDVI por grupo - VERANO 2024",
                     fontsize=14, fontweight='bold')
     ax_ver.grid(True, linestyle='--', alpha=0.5)
     ax_ver.legend(fontsize=11, loc='best')
     ax_ver.set_ylim(bottom=0)
-    
-    plt.suptitle("Evolucion temporal del NDVI agrupado por tipo de uso del suelo", 
+
+    plt.suptitle("Evolucion temporal del NDVI agrupado por tipo de uso del suelo",
                  fontsize=16, fontweight='bold', y=1.02)
     plt.tight_layout()
     plt.show()
-    
-    print("Graficos generados exitosamente")
-else:
-    print("Raster 9_NDVI_con_recortes.tif no encontrado")
+
+    print("Graficos generados exitosamente (desde cache o cálculo)")
 
 # %% [markdown]
 # ## Paso 4: Entrenamiento del Modelo Random Forest
@@ -648,12 +671,25 @@ else:
 # 
 # ### Validación Espacial que Implementamos
 # 
-# Cuando trabajamos con datos espaciales, los píxeles vecinos suelen estar correlacionados. Si entrenamos con píxeles que son vecinos de los píxeles de test, el modelo puede "hacer trampa" al aprender patrones espaciales locales en lugar de patrones generalizables. Por eso implementamos una estrategia de **validación por bloques espaciales**:
+# Si entrenamos con píxeles que son vecinos de los píxeles de test, el modelo puede "hacer trampa" al aprender patrones espaciales locales en lugar de patrones generalizables. Por eso implementamos una estrategia de **validación por bloques espaciales**:
 # 
 # - Dividimos el área en bloques 3x3 (grid)
-# - Los bloques de entrenamiento y test están separados espacialmente
-# - Usamos un patrón tipo tablero de ajedrez para asegurar independencia espacial
+# - Usamos un patrón tipo tablero de ajedrez
 # 
+# %%
+# Visualización: Grilla de validación espacial (bloques 3x3)
+grilla_path = os.path.join(PROJECT_ROOT, "scripts", "img", "grilla.png")
+if os.path.exists(grilla_path):
+    img = plt.imread(grilla_path)
+    plt.figure(figsize=(10, 10))
+    plt.imshow(img)
+    plt.title("Esquema de Validación por Bloques (Grilla 3x3)", fontsize=14, fontweight='bold')
+    plt.axis('off')
+    plt.tight_layout()
+    plt.show()
+else:
+    print(f"No se encontró la imagen de grilla en: {grilla_path}")
+
 # ### Hiperparámetros que Seleccionamos
 # 
 # - `n_estimators=50`: Lo optimizamos mediante análisis de OOB error (probamos desde 10 hasta 200)
@@ -662,6 +698,30 @@ else:
 # - `min_samples_leaf=2`: Controla la complejidad de las hojas
 # - `class_weight='balanced'`: Para manejar el desbalance de clases
 # 
+# %% [markdown]
+# #### Eleccion de `n_estimators` con OOB error
+# 
+# El OOB error (Out-Of-Bag) es una estimación del error de generalización propia del Random Forest:
+# cada árbol se entrena con un bootstrap del conjunto de entrenamiento y, para ese árbol, las muestras
+# que quedan “fuera de la bolsa” (no usadas para entrenarlo) se emplean como pseudo-validación. Al promediar
+# el desempeño OOB a medida que agregamos más árboles, obtenemos una curva que se estabiliza cuando agregar
+# árboles adicionales ya no mejora sustancialmente el error. Elegimos `n_estimators=50` porque es el punto
+# a partir del cual la curva de OOB error se aplana.
+#
+# %%
+# Visualización: curva OOB error vs número de árboles
+oob_png = os.path.join(PROJECT_ROOT, "scripts", "img", "oob_error.png")
+if os.path.exists(oob_png):
+    img = plt.imread(oob_png)
+    plt.figure(figsize=(10, 6))
+    plt.imshow(img)
+    plt.title("Curva OOB error vs n_estimators", fontsize=14, fontweight='bold')
+    plt.axis('off')
+    plt.tight_layout()
+    plt.show()
+else:
+    print(f"No se encontró la imagen OOB error en: {oob_png}")
+
 # ### Resultados que Obtuvimos
 # 
 # - **Accuracy**: 86.27%
@@ -677,7 +737,7 @@ else:
 # %% [markdown]
 # ## Paso 5: Predicciones del Modelo
 # 
-# Una vez que entrenamos el modelo, generamos predicciones para todos los píxeles válidos del área de estudio. Esto nos permite crear mapas completos de clasificación y evaluar visualmente qué tan bien está funcionando el modelo.
+# Una vez que entrenamos el modelo, generamos predicciones para todos los píxeles válidos del área de estudio. Esto nos permite crear mapas de clasificación y evaluar visualmente qué tan bien está funcionando el modelo.
 # 
 # ### Visualización: Realidad vs Predicción
 # 
@@ -726,6 +786,9 @@ if os.path.exists(prediccion_path) and os.path.exists(raster_caracteristicas):
             2: '#e6f0c2'   # Beige para NO AGRICOLA
         }
         cmap_custom = ListedColormap([colores_clases[0], colores_clases[1], colores_clases[2]])
+        # Colormap para visualizacion con color para nodata
+        cmap_display = ListedColormap([colores_clases[0], colores_clases[1], colores_clases[2]])
+        cmap_display.set_bad('#BDBDBD')  # nodata en gris
         
         fig, axes = plt.subplots(1, 2, figsize=(20, 10))
         
@@ -809,6 +872,69 @@ if os.path.exists(prediccion_path) and os.path.exists(raster_caracteristicas):
         ax_cm.set_title("Matriz de confusion - Tres Arroyos", fontsize=14, fontweight='bold')
         plt.colorbar(im_cm, ax=ax_cm, fraction=0.046, pad=0.04)
         plt.tight_layout()
+        plt.show()
+
+        # ----- Grafico de error espacial (abajo de la comparacion) -----
+        # Mapa de errores: 0=Correcto, 1..6 tipos de error, 7=Sin dato/fuera de clases
+        def mapa_error(truth_arr, pred_arr):
+            err = np.full_like(truth_arr, fill_value=7, dtype=np.int32)
+            mask_valid = (truth_arr >= 0) & (truth_arr <= 2) & (pred_arr >= 0) & (pred_arr <= 2)
+            err[mask_valid & (truth_arr == pred_arr)] = 0
+            err[mask_valid & (truth_arr == 0) & (pred_arr == 1)] = 1  # Cultivo -> Barbecho
+            err[mask_valid & (truth_arr == 0) & (pred_arr == 2)] = 2  # Cultivo -> No agricola
+            err[mask_valid & (truth_arr == 1) & (pred_arr == 0)] = 3  # Barbecho -> Cultivo
+            err[mask_valid & (truth_arr == 1) & (pred_arr == 2)] = 4  # Barbecho -> No agricola
+            err[mask_valid & (truth_arr == 2) & (pred_arr == 0)] = 5  # No agricola -> Cultivo
+            err[mask_valid & (truth_arr == 2) & (pred_arr == 1)] = 6  # No agricola -> Barbecho
+            return err
+
+        error_pred = mapa_error(realidad_agrupada, prediccion.astype(np.int32))
+
+        error_colors = [
+            "#4CAF50",  # 0 Correcto
+            "#FFA726",  # 1 Cultivo -> Barbecho
+            "#EF5350",  # 2 Cultivo -> No agricola
+            "#7E57C2",  # 3 Barbecho -> Cultivo
+            "#8D6E63",  # 4 Barbecho -> No agricola
+            "#42A5F5",  # 5 No agricola -> Cultivo
+            "#26A69A",  # 6 No agricola -> Barbecho
+            "#BDBDBD",  # 7 Sin dato / fuera de clases
+        ]
+        error_labels = [
+            "Correcto (TRUE = PRED)",
+            "TRUE: Cultivo, PRED: Barbecho",
+            "TRUE: Cultivo, PRED: No agrícola",
+            "TRUE: Barbecho, PRED: Cultivo",
+            "TRUE: Barbecho, PRED: No agrícola",
+            "TRUE: No agrícola, PRED: Cultivo",
+            "TRUE: No agrícola, PRED: Barbecho",
+            "Sin dato / PRED fuera de clases",
+        ]
+        cmap_err = ListedColormap(error_colors)
+
+        fig_err, axes_err = plt.subplots(1, 2, figsize=(20, 10))
+
+        # Realidad (para referencia)
+        ax = axes_err[0]
+        ax.imshow(realidad_display, cmap=cmap_custom, vmin=0, vmax=2,
+                  interpolation='nearest', extent=extent, origin='upper')
+        ax.set_title('Realidad (INTA Verano - Agrupado)', fontsize=14, fontweight='bold')
+        ax.axis('off')
+
+        # Error prediccion
+        ax = axes_err[1]
+        ax.imshow(error_pred, cmap=cmap_err, vmin=0, vmax=len(error_colors)-1,
+                  interpolation='nearest', extent=extent, origin='upper')
+        ax.set_title('Error Prediccion (Random Forest)', fontsize=14, fontweight='bold')
+        ax.axis('off')
+
+        handles_err = [Patch(facecolor=error_colors[i], label=error_labels[i]) for i in range(len(error_labels))]
+        fig_err.legend(handles=handles_err, loc='upper center', ncol=3, fontsize=11, bbox_to_anchor=(0.5, 0.02))
+
+        plt.suptitle('Errores: INTA vs Prediccion - Tres Arroyos',
+                     fontsize=16, fontweight='bold', y=0.98)
+        plt.tight_layout(rect=[0, 0.08, 1, 0.95])
+        plt.subplots_adjust(bottom=0.10)
         plt.show()
 else:
     print("Archivos de prediccion no encontrados")
@@ -971,7 +1097,7 @@ else:
 #   - Banda 1: realidad (INTA) ya agrupada en clases 0,1,2
 #   - Banda 2: prediccion del Random Forest (clases 0,1,2)
 prediccion_cs = os.path.join(DATA_PROC_DIR, "20_predicciones_rf_coronel_suarez.tif")
-prediccion_cews_cs = os.path.join("..", "Joan", "proc_joan", "20_predicciones_rf_coronel_suarez_cews.tif")
+prediccion_cews_cs = os.path.join(PROJECT_ROOT, "Joan", "proc_joan", "20_predicciones_rf_coronel_suarez_cews.tif")
 prediccion_mwm_cs = os.path.join(DATA_PROC_DIR, "20_predicciones_rf_coronel_suarez_MW_3x3.tif")
 
 if os.path.exists(prediccion_cs):
@@ -1044,7 +1170,16 @@ if os.path.exists(prediccion_cs):
                     1,
                     out_shape=(H_preview, W_preview),
                     resampling=rasterio.enums.Resampling.nearest
-                )
+                ).astype(np.int32)
+            # Normalizacion de etiquetas CEWS a {0,1,2}; mapear 255->0; negativos->-1
+            # Si viene como {1,2,3}, restamos 1
+            vals_cews = np.unique(prediccion_cews)
+            if set(vals_cews.tolist()).issubset({1, 2, 3, -1}):
+                prediccion_cews = prediccion_cews - 1
+            prediccion_cews[prediccion_cews == 255] = 0
+            prediccion_cews[prediccion_cews < 0] = -1
+            # Cualquier otro valor fuera de {0,1,2,-1} lo llevamos a 0 (Cultivo) segun aclaracion
+            prediccion_cews[(prediccion_cews > 2) & (prediccion_cews != -1)] = 0
             tiene_cews = True
         else:
             prediccion_cews = None
@@ -1069,34 +1204,40 @@ if os.path.exists(prediccion_cs):
         # Preparar datos para visualizacion
         realidad_display = realidad_agrupada.copy().astype(np.int32)
         realidad_display[realidad_agrupada < 0] = -1
+        realidad_masked = np.ma.masked_where(realidad_display < 0, realidad_display)
         
         prediccion_orig_display = prediccion_orig.copy().astype(np.int32)
         prediccion_orig_display[prediccion_orig < 0] = -1
+        prediccion_orig_masked = np.ma.masked_where(prediccion_orig_display < 0, prediccion_orig_display)
         
         prediccion_mwm_display = prediccion_mwm.copy().astype(np.int32)
         prediccion_mwm_display[prediccion_mwm < 0] = -1
+        prediccion_mwm_masked = np.ma.masked_where(prediccion_mwm_display < 0, prediccion_mwm_display)
         
         if tiene_cews:
             prediccion_cews_display = prediccion_cews.copy().astype(np.int32)
             prediccion_cews_display[prediccion_cews < 0] = -1
+            # Para la visualizacion, tratar nodata/valores fuera de clase como CULTIVO (0)
+            prediccion_cews_for_plot = prediccion_cews_display.copy()
+            prediccion_cews_for_plot[prediccion_cews_for_plot < 0] = 0
         
         # Plot 1: Realidad INTA
         ax = axes[0, 0]
-        im1 = ax.imshow(realidad_display, cmap=cmap_custom, vmin=0, vmax=2, 
+        im1 = ax.imshow(realidad_masked, cmap=cmap_display, vmin=0, vmax=2, 
                        interpolation='nearest', extent=extent, origin='upper')
         ax.set_title('Realidad (INTA Verano - Coronel Suarez)', fontsize=14, fontweight='bold')
         ax.axis('off')
         
         # Plot 2: Prediccion Original
         ax = axes[0, 1]
-        im2 = ax.imshow(prediccion_orig_display, cmap=cmap_custom, vmin=0, vmax=2, 
+        im2 = ax.imshow(prediccion_orig_masked, cmap=cmap_display, vmin=0, vmax=2, 
                        interpolation='nearest', extent=extent, origin='upper')
         ax.set_title('Prediccion Original (Random Forest)', fontsize=14, fontweight='bold')
         ax.axis('off')
         
         # Plot 3: Prediccion MWM
         ax = axes[1, 0]
-        im3 = ax.imshow(prediccion_mwm_display, cmap=cmap_custom, vmin=0, vmax=2, 
+        im3 = ax.imshow(prediccion_mwm_masked, cmap=cmap_display, vmin=0, vmax=2, 
                        interpolation='nearest', extent=extent, origin='upper')
         ax.set_title('Prediccion Post-procesada (Moving Window 3x3)', fontsize=14, fontweight='bold')
         ax.axis('off')
@@ -1104,7 +1245,7 @@ if os.path.exists(prediccion_cs):
         # Plot 4: Prediccion CEWS o placeholder
         ax = axes[1, 1]
         if tiene_cews:
-            im4 = ax.imshow(prediccion_cews_display, cmap=cmap_custom, vmin=0, vmax=2, 
+            im4 = ax.imshow(prediccion_cews_for_plot, cmap=cmap_display, vmin=0, vmax=2, 
                            interpolation='nearest', extent=extent, origin='upper')
             ax.set_title('Prediccion Post-procesada (CEWS)', fontsize=14, fontweight='bold')
         else:
@@ -1115,7 +1256,8 @@ if os.path.exists(prediccion_cs):
         
         # Leyenda comun
         handles = [Patch(facecolor=colores_clases[i], label=nombres_clases[i]) for i in range(3)]
-        fig.legend(handles=handles, loc='upper center', ncol=3, fontsize=12, bbox_to_anchor=(0.5, 0.02))
+        handles.append(Patch(facecolor='#BDBDBD', label='SIN DATO'))
+        fig.legend(handles=handles, loc='upper center', ncol=4, fontsize=12, bbox_to_anchor=(0.5, 0.02))
         
         # Titulo general con mayor margen respecto a los titulos de cada subplot
         plt.suptitle('Comparacion Completa: INTA vs Predicciones Originales y Post-procesadas - Coronel Suarez', 
@@ -1126,6 +1268,164 @@ if os.path.exists(prediccion_cs):
         plt.show()
 else:
     print("Archivos de Coronel Suarez no encontrados")
+
+# %%
+# Visualizacion de ERRORES: INTA vs errores de Pred. Original, MW y CEWS - Coronel Suarez
+prediccion_cs = os.path.join(DATA_PROC_DIR, "20_predicciones_rf_coronel_suarez.tif")
+prediccion_cews_cs = os.path.join(PROJECT_ROOT, "Joan", "proc_joan", "20_predicciones_rf_coronel_suarez_cews.tif")
+prediccion_mwm_cs = os.path.join(DATA_PROC_DIR, "20_predicciones_rf_coronel_suarez_MW_3x3.tif")
+
+if os.path.exists(prediccion_cs):
+    W_preview, H_preview = 1000, 1000
+
+    with rasterio.open(prediccion_cs) as src_pred:
+        extent = [src_pred.bounds.left, src_pred.bounds.right, src_pred.bounds.bottom, src_pred.bounds.top]
+
+        realidad = src_pred.read(
+            1,
+            out_shape=(H_preview, W_preview),
+            resampling=rasterio.enums.Resampling.nearest
+        ).astype(np.int32)
+        prediccion_orig = src_pred.read(
+            2,
+            out_shape=(H_preview, W_preview),
+            resampling=rasterio.enums.Resampling.nearest
+        ).astype(np.int32)
+
+    # Leer MWM desde archivo ya generado
+    with rasterio.open(prediccion_mwm_cs) as src_mwm:
+        prediccion_mwm = src_mwm.read(
+            1,
+            out_shape=(H_preview, W_preview),
+            resampling=rasterio.enums.Resampling.nearest
+        ).astype(np.int32)
+
+    # Leer CEWS si existe
+    if os.path.exists(prediccion_cews_cs):
+        with rasterio.open(prediccion_cews_cs) as src_cews:
+            prediccion_cews = src_cews.read(
+                1,
+                out_shape=(H_preview, W_preview),
+                resampling=rasterio.enums.Resampling.nearest
+            ).astype(np.int32)
+        # Normalizacion de etiquetas CEWS a {0,1,2}; mapear 255->0; negativos->-1
+        vals_cews = np.unique(prediccion_cews)
+        if set(vals_cews.tolist()).issubset({1, 2, 3, -1}):
+            prediccion_cews = prediccion_cews - 1
+        prediccion_cews[prediccion_cews == 255] = 0
+        prediccion_cews[prediccion_cews < 0] = -1
+        prediccion_cews[(prediccion_cews > 2) & (prediccion_cews != -1)] = 0
+        tiene_cews = True
+    else:
+        prediccion_cews = None
+        tiene_cews = False
+
+    # Normalizar nodata en realidad
+    realidad_agrupada = realidad.copy()
+    realidad_agrupada[realidad_agrupada < 0] = -1
+
+    # Funcion para mapear errores (0=correcto, 1..6=tipos de error, 7=sin dato/fuera de clases)
+    def mapa_error(truth_arr, pred_arr):
+        err = np.full_like(truth_arr, fill_value=7, dtype=np.int32)  # 7 = sin dato / fuera de clases
+        mask_valid = (truth_arr >= 0) & (truth_arr <= 2) & (pred_arr >= 0) & (pred_arr <= 2)
+        # correcto
+        err[mask_valid & (truth_arr == pred_arr)] = 0
+        # errores por tipo
+        err[mask_valid & (truth_arr == 0) & (pred_arr == 1)] = 1  # Cultivo -> Barbecho
+        err[mask_valid & (truth_arr == 0) & (pred_arr == 2)] = 2  # Cultivo -> No agricola
+        err[mask_valid & (truth_arr == 1) & (pred_arr == 0)] = 3  # Barbecho -> Cultivo
+        err[mask_valid & (truth_arr == 1) & (pred_arr == 2)] = 4  # Barbecho -> No agricola
+        err[mask_valid & (truth_arr == 2) & (pred_arr == 0)] = 5  # No agricola -> Cultivo
+        err[mask_valid & (truth_arr == 2) & (pred_arr == 1)] = 6  # No agricola -> Barbecho
+        return err
+
+    error_orig = mapa_error(realidad_agrupada, prediccion_orig)
+    error_mwm = mapa_error(realidad_agrupada, prediccion_mwm)
+    if tiene_cews:
+        # Para errores, tratar nodata CEWS como CULTIVO (0)
+        prediccion_cews_adj = prediccion_cews.copy()
+        prediccion_cews_adj[prediccion_cews_adj < 0] = 0
+        error_cews = mapa_error(realidad_agrupada, prediccion_cews_adj)
+
+    # Colores y etiquetas para errores (incluye 7 = sin dato/fuera de clases)
+    error_colors = [
+        "#4CAF50",  # 0 Correcto (verde)
+        "#FFA726",  # 1 Cultivo -> Barbecho (naranja)
+        "#EF5350",  # 2 Cultivo -> No agricola (rojo)
+        "#7E57C2",  # 3 Barbecho -> Cultivo (violeta)
+        "#8D6E63",  # 4 Barbecho -> No agricola (marron)
+        "#42A5F5",  # 5 No agricola -> Cultivo (azul)
+        "#26A69A",  # 6 No agricola -> Barbecho (teal)
+        "#BDBDBD",  # 7 Sin dato / fuera de clases (gris)
+    ]
+    error_labels = [
+        "Correcto (TRUE = PRED)",
+        "TRUE: Cultivo, PRED: Barbecho",
+        "TRUE: Cultivo, PRED: No agrícola",
+        "TRUE: Barbecho, PRED: Cultivo",
+        "TRUE: Barbecho, PRED: No agrícola",
+        "TRUE: No agrícola, PRED: Cultivo",
+        "TRUE: No agrícola, PRED: Barbecho",
+        "Sin dato / PRED fuera de clases",
+    ]
+    cmap_err = ListedColormap(error_colors)
+
+    # Colores de clases para mostrar la verdad
+    colores_clases = {0: '#339820', 1: '#646b63', 2: '#e6f0c2'}
+    cmap_clases = ListedColormap([colores_clases[0], colores_clases[1], colores_clases[2]])
+    nombres_clases = ['CULTIVO AGRICOLA', 'BARBECHO', 'NO AGRICOLA']
+
+    # Preparar datos para visualizacion
+    realidad_display = realidad_agrupada.copy().astype(np.int32)
+    realidad_display[realidad_agrupada < 0] = -1
+
+    # Figura 2x2 con mismo layout
+    fig, axes = plt.subplots(2, 2, figsize=(20, 20))
+
+    # Plot 1: Realidad (clases)
+    ax = axes[0, 0]
+    im1 = ax.imshow(realidad_display, cmap=cmap_clases, vmin=0, vmax=2,
+                    interpolation='nearest', extent=extent, origin='upper')
+    ax.set_title('Realidad (INTA Verano - Coronel Suarez)', fontsize=14, fontweight='bold')
+    ax.axis('off')
+
+    # Plot 2: Error Prediccion Original
+    ax = axes[0, 1]
+    im2 = ax.imshow(error_orig, cmap=cmap_err, vmin=0, vmax=len(error_colors)-1,
+                    interpolation='nearest', extent=extent, origin='upper')
+    ax.set_title('Error Prediccion Original', fontsize=14, fontweight='bold')
+    ax.axis('off')
+
+    # Plot 3: Error Moving Window
+    ax = axes[1, 0]
+    im3 = ax.imshow(error_mwm, cmap=cmap_err, vmin=0, vmax=len(error_colors)-1,
+                    interpolation='nearest', extent=extent, origin='upper')
+    ax.set_title('Error Post-procesado (Moving Window 3x3)', fontsize=14, fontweight='bold')
+    ax.axis('off')
+
+    # Plot 4: Error CEWS o placeholder
+    ax = axes[1, 1]
+    if tiene_cews:
+        im4 = ax.imshow(error_cews, cmap=cmap_err, vmin=0, vmax=len(error_colors)-1,
+                        interpolation='nearest', extent=extent, origin='upper')
+        ax.set_title('Error Post-procesado (CEWS)', fontsize=14, fontweight='bold')
+    else:
+        ax.text(0.5, 0.5, 'CEWS no disponible', ha='center', va='center',
+                fontsize=14, transform=ax.transAxes)
+        ax.set_title('Error Post-procesado (CEWS)', fontsize=14, fontweight='bold')
+    ax.axis('off')
+
+    # Leyenda de errores
+    handles_err = [Patch(facecolor=error_colors[i], label=error_labels[i]) for i in range(len(error_labels))]
+    fig.legend(handles=handles_err, loc='upper center', ncol=3, fontsize=11, bbox_to_anchor=(0.5, 0.02))
+
+    plt.suptitle('Errores: INTA vs Predicciones (Original, MWM, CEWS) - Coronel Suarez',
+                 fontsize=16, fontweight='bold', y=0.98)
+    plt.tight_layout(rect=[0, 0.08, 1, 0.9])
+    plt.subplots_adjust(bottom=0.10)
+    plt.show()
+else:
+    print("Archivos de Coronel Suarez no encontrados para visualizacion de errores")
 
 # %% [markdown]
 # ## Análisis Comparativo de Post-procesamiento en Coronel Suárez
