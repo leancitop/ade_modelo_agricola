@@ -15,14 +15,13 @@
 # 
 # El proyecto sigue un pipeline secuencial que fuimos desarrollando paso a paso:
 # 
-# 1. **Descarga de datos satelitales** desde Google Earth Engine
-# 2. **Cálculo de NDVI mensual** para generar series temporales
-# 3. **Integración con datos INTA** (Mapa Nacional de Cultivos) como referencia
-# 4. **Procesamiento de características multitemporales** (estadísticas y series temporales)
-# 5. **Entrenamiento del modelo Random Forest** con validación espacial para evitar autocorrelación
-# 6. **Generación de predicciones** para crear mapas de clasificación
-# 7. **Post-procesamiento** con filtro Moving Window, CEWS para suavizar las predicciones
-# 8. **Validación en nuevas zonas** para evaluar la generalización del modelo
+# 1. **Descarga de imágenes satelitales** desde Google Earth Engine
+# 2. **Integración con datos INTA** (Mapa Nacional de Cultivos) como referencia
+# 3. **Procesamiento de características multitemporales** (estadísticas/series NDVI)
+# 4. **Entrenamiento del modelo Random Forest** con validación espacial
+# 5. **Predicciones del modelo** para mapas de clasificación
+# 6. **Post-procesamiento** (Moving Window 3x3 y CEWS)
+# 7. **Validación en nuevas zonas** (generalización del modelo)
 
 # %%
 import os
@@ -32,7 +31,6 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap, BoundaryNorm
 from matplotlib.patches import Patch
 import matplotlib.patches as mpatches
-from graphviz import Digraph
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 from scipy.ndimage import generic_filter
@@ -1168,51 +1166,15 @@ else:
 # ### Flujo de Trabajo que Desarrollamos
 # 
 # 1. Descarga de imágenes Sentinel-2 desde Google Earth Engine.  
-# 2. Cálculo de NDVI mensual (12 imágenes para capturar variabilidad temporal).  
-# 3. Integración con datos INTA (MNC invierno y verano como verdad terreno).  
-# 4. Procesamiento de características multitemporales: estadísticas NDVI (mediana, min, max, std) y series temporales NDVI (7 meses desde diciembre 2023).  
-# 5. Entrenamiento del modelo Random Forest con validación espacial por bloques y agrupación en 3 clases (Cultivo, Barbecho, No agrícola).  
-# 6. Generación de predicciones y mapas de clasificación para todo el área de estudio.  
-# 7. Post-procesamiento de las predicciones (Moving Window 3x3 y CEWS) para mejorar coherencia espacial y reducir ruido.  
-# 8. Validación en nuevas zonas (Coronel Suárez) para evaluar la capacidad de generalización del modelo.  
+# 2. Integración con datos INTA (MNC invierno y verano como verdad terreno).  
+# 3. Procesamiento de características multitemporales (estadísticas NDVI y series temporales).  
+# 4. Entrenamiento del modelo Random Forest con validación espacial por bloques y 3 clases.  
+# 5. Predicciones del modelo y generación de mapas de clasificación.  
+# 6. Post-procesamiento (Moving Window 3x3 y CEWS) para mejorar coherencia espacial y reducir ruido.  
+# 7. Validación en nuevas zonas (Coronel Suárez) para evaluar la generalización del modelo.  
 # 
 # %%
-# Visualizacion grafica del flujo de trabajo del pipeline completo con graphviz
-steps = [
-    "1. Descarga de imágenes Sentinel-2",
-    "2. Cálculo de NDVI mensual",
-    "3. Integración con datos INTA",
-    "4. Procesamiento de características multitemporales",
-    "5. Entrenamiento Random Forest con validación espacial",
-    "6. Generación de predicciones",
-    "7. Post-procesamiento (Moving Window 3x3 y CEWS)",
-    "8. Validación en nuevas zonas (Coronel Suárez)"
-]
-
-dot = Digraph(
-    comment="Flujo de trabajo del pipeline completo",
-    format="png"
-)
-dot.attr(rankdir="TB", bgcolor="white", fontsize="12")
-dot.attr("node", shape="box", style="rounded,filled", fillcolor="#e6f0c2", color="black")
-
-# Crear nodos secuenciales
-for i, step in enumerate(steps, start=1):
-    node_id = f"step_{i}"
-    dot.node(node_id, step)
-
-# Conectar nodos con flechas
-for i in range(1, len(steps)):
-    dot.edge(f"step_{i}", f"step_{i+1}")
-
-# Intentar mostrar en entorno interactivo (notebook); si no, guardar a archivo
-try:
-    from IPython.display import display  # type: ignore
-    display(dot)
-except ImportError:
-    output_path = os.path.join(PROJECT_ROOT, "output_pipeline")
-    dot.render(output_path, cleanup=True)
-    print(f"Diagrama del pipeline guardado en: {output_path}.png")
+# (Se removió la visualización con Graphviz para evitar dependencias del sistema)
 # %% [markdown]
 # ### Archivos Principales que Generamos
 # 

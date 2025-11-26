@@ -25,10 +25,13 @@ setup_github.ps1
 *~
 
 # Archivos de datos grandes
-data/**/*.npy
-data/**/*.pkl
-# data/*.tif  # Descomenta si no quieres subir imágenes
-# data/*.csv  # Descomenta si no quieres subir CSVs
+**/*.npy
+**/*.pkl
+*.tif  # Descomenta si no quieres subir imágenes
+*.csv  # Descomenta si no quieres subir CSVs
+*.xml
+*.qml
+*.zip
 
 # Archivos temporales
 *.tmp
